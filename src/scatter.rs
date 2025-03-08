@@ -1,7 +1,7 @@
 use crate::ndindex::ndindex;
 use burn::prelude::*;
+use burn::tensor::Tensor;
 use burn::tensor::{Int, Numeric};
-use burn::{backend::Wgpu, tensor::Tensor};
 
 pub fn scatternd<B: Backend, const R: usize, const Q: usize, const S: usize, T>(
     data: Tensor<B, R, T>,
@@ -22,26 +22,19 @@ where
 
     let mut output = data.clone();
     let update_indices = &indices.shape().dims[0..Q - 1];
-    let indices_data = indices.to_data();
-    println!("Update Indices: {}", indices_data);
     let mut actual_indices: Vec<Tensor<B, Q, Int>> = Vec::new();
-    let mut actual_updates: Vec<Tensor<B, S, T>> = Vec::new();
     for idx in ndindex(update_indices) {
         let indices_idx = indices
             .clone()
             .select(0, Tensor::from_data(&idx[..], &indices.device()));
-        println!("{:?}", indices_idx);
-        let update = updates
-            .clone()
-            .select(0, Tensor::from_data(&idx[..], &indices.device()));
         actual_indices.push(indices_idx);
-        actual_updates.push(update);
     }
     let actual_indices = Tensor::cat(actual_indices, 0);
-    let actual_updates = Tensor::cat(actual_updates, 0);
-    println!("{}", actual_indices);
-    println!("{}", actual_updates);
 
-    // Somehow assign output[actual_indices] = actual_updates
+    for (idx, values) in actual_indices.iter_dim(0).zip(updates.iter_dim(0)) {
+        let id = idx.reshape([1]).unsqueeze();
+        let data_values = data.clone().select(0, id.clone());
+        output = output.select_assign(0, id, values.unsqueeze() - data_values);
+    }
     output
 }
